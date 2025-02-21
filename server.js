@@ -91,10 +91,10 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ message: "User not found. Please register." });
     }
 
-    // 🔹 Ensure user has a password (Fixes bcrypt error)
-    if (!user.password) {
-      console.error(`❌ Error: User ${username} does not have a password in the database.`);
-      return res.status(500).json({ message: "Server error: Invalid user data (password missing)" });
+    // 🔹 Ensure user has a valid password (Fix bcrypt error)
+    if (!user.password || typeof user.password !== "string") {
+      console.error(`❌ Error: User ${username} has an invalid password.`);
+      return res.status(500).json({ message: "Server error: User data corrupted (password missing)" });
     }
 
     // 🔹 Validate password
@@ -113,15 +113,18 @@ app.post('/login', async (req, res) => {
       await user.save();
     }
 
+    // 🔹 Fetch latest user data after update
+    const updatedUser = await User.findOne({ username });
+
     // 🔹 Generate authentication token
     const token = jwt.sign(
       { username: user.username },
-      process.env.JWT_SECRET || "defaultsecret", // ✅ Uses env variable or default
+      process.env.JWT_SECRET || "defaultsecret",
       { expiresIn: "7d" }
     );
 
     console.log(`✅ Login successful for ${username}`);
-    res.json({ message: "Login successful", token, user });
+    res.json({ message: "Login successful", token, user: updatedUser });
 
   } catch (err) {
     console.error("❌ Error in /login:", err);
