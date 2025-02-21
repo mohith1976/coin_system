@@ -1,18 +1,25 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const bcrypt = require('bcryptjs'); // ✅ Hash passwords securely
+const bcrypt = require('bcryptjs'); // ✅ Secure password hashing
 const jwt = require('jsonwebtoken'); // ✅ Generate authentication tokens
-require('dotenv').config();
+require('dotenv').config(); // ✅ Load environment variables
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ✅ Ensure MongoDB URI is Set
+// ✅ Load and Validate Environment Variables
 const mongoURI = process.env.MONGO_URI;
+const jwtSecret = process.env.JWT_SECRET;
+
 if (!mongoURI) {
-  console.error("❌ MONGO_URI is not set in .env file or Render environment variables.");
+  console.error("❌ ERROR: MONGO_URI is missing in .env file!");
+  process.exit(1);
+}
+
+if (!jwtSecret) {
+  console.error("❌ ERROR: JWT_SECRET is missing in .env file!");
   process.exit(1);
 }
 
@@ -98,7 +105,7 @@ app.post('/login', async (req, res) => {
     }
 
     // 🔹 Generate authentication token
-    const token = jwt.sign({ username: user.username }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
 
     res.json({ message: "Login successful", token, user });
 
