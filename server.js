@@ -94,7 +94,7 @@ app.post('/login', async (req, res) => {
     // 🔹 Ensure user has a password (Fixes bcrypt error)
     if (!user.password) {
       console.error(`❌ Error: User ${username} does not have a password in the database.`);
-      return res.status(500).json({ message: "Server error: Invalid user data" });
+      return res.status(500).json({ message: "Server error: Invalid user data (password missing)" });
     }
 
     // 🔹 Validate password
@@ -106,6 +106,7 @@ app.post('/login', async (req, res) => {
     // 🔹 Grant daily login bonus if it's a new day
     let today = new Date().toISOString().split('T')[0];
     if (user.lastLogin !== today) {
+      console.log(`🎉 Daily bonus granted! +50 coins for ${username}`);
       user.coins += 50;
       user.lastLogin = today;
       user.bonusClicks = 0;  // ✅ Reset bonus clicks each day
@@ -113,8 +114,13 @@ app.post('/login', async (req, res) => {
     }
 
     // 🔹 Generate authentication token
-    const token = jwt.sign({ username: user.username }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign(
+      { username: user.username },
+      process.env.JWT_SECRET || "defaultsecret", // ✅ Uses env variable or default
+      { expiresIn: "7d" }
+    );
 
+    console.log(`✅ Login successful for ${username}`);
     res.json({ message: "Login successful", token, user });
 
   } catch (err) {
