@@ -63,7 +63,8 @@ app.post('/register', async (req, res) => {
     const newUser = new User({ 
       username, 
       password: hashedPassword, 
-      lastLogin: new Date().toISOString().split('T')[0],
+      coins: 0, // ✅ Set coins to 0 until first login
+      lastLogin: "", // ✅ Empty lastLogin field until first login
       bonusClicks: 0 // ✅ Ensure bonusClicks is initialized
     });
 
@@ -75,6 +76,7 @@ app.post('/register', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ LOGIN API (Authenticate User & Give Daily Bonus)
 app.post('/login', async (req, res) => {
