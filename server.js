@@ -132,28 +132,29 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ✅ BONUS COINS API (Click Bonus)
-app.post('/add-coins', async (req, res) => {
-  try {
-    const { username, coins } = req.body;
-    console.log(`🔍 Adding ${coins} coins to: ${username}`);
 
-    let user = await User.findOne({ username });
+// ✅ Protect the Bonus Coins API
+app.post('/add-coins', authenticateUser, async (req, res) => {
+  try {
+    const { coins } = req.body;
+    console.log(`🔍 Adding ${coins} coins to: ${req.username}`);
+
+    let user = await User.findOne({ username: req.username });
     if (!user) {
       console.log("❌ User not found for bonus.");
       return res.status(404).json({ message: "User not found" });
     }
 
     if (user.bonusClicks >= 5) {
-      console.log(`❌ User ${username} has used all bonus attempts today.`);
+      console.log(`❌ User ${req.username} has used all bonus attempts today.`);
       return res.status(400).json({ message: "No bonus attempts left today" });
     }
 
     user.coins += coins;
-    user.bonusClicks += 1;  // ✅ Track bonus clicks per user
+    user.bonusClicks += 1;
     await user.save();
 
-    console.log(`✅ Coins updated for ${username}: ${user.coins}, Bonus Clicks: ${user.bonusClicks}`);
+    console.log(`✅ Coins updated for ${req.username}: ${user.coins}, Bonus Clicks: ${user.bonusClicks}`);
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
@@ -161,6 +162,7 @@ app.post('/add-coins', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 // ✅ Fetch Updated User Data API
 app.post('/fetch-user', async (req, res) => {
   try {
@@ -179,6 +181,25 @@ app.post('/fetch-user', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+const jwt = require('jsonwebtoken');
+
+// ✅ Middleware to Verify Token
+const authenticateUser = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <TOKEN>"
+  
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized: No token provided" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET || "defaultsecret", (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Unauthorized: Invalid token" });
+    }
+    req.username = decoded.username; // Attach username to request
+    next();
+  });
+};
 
 
 // ✅ CHECK BACKEND STATUS
