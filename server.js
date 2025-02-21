@@ -89,6 +89,12 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ message: "User not found. Please register." });
     }
 
+    // 🔹 Ensure user has a password (Fixes bcrypt error)
+    if (!user.password) {
+      console.error(`❌ Error: User ${username} does not have a password in the database.`);
+      return res.status(500).json({ message: "Server error: Invalid user data" });
+    }
+
     // 🔹 Validate password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -105,7 +111,7 @@ app.post('/login', async (req, res) => {
     }
 
     // 🔹 Generate authentication token
-    const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
+    const token = jwt.sign({ username: user.username }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.json({ message: "Login successful", token, user });
 
