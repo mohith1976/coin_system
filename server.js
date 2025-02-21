@@ -35,7 +35,8 @@ app.get("/", (req, res) => {
 const UserSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   coins: { type: Number, default: 50 },
-  lastLogin: { type: String, required: true }
+  lastLogin: { type: String, required: true },
+  bonusClicks: { type: Number, default: 0 } // ✅ Store bonus attempts per user
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -51,7 +52,7 @@ app.post('/login', async (req, res) => {
 
     if (!user) {
       console.log("🆕 Creating new user...");
-      user = new User({ username, lastLogin: today });
+      user = new User({ username, lastLogin: today, bonusClicks: 0 });  // ✅ Reset bonusClicks for new users
       await user.save();
       console.log("✅ New user saved in MongoDB:", user);
       return res.json({ message: "User created", user });
@@ -61,6 +62,7 @@ app.post('/login', async (req, res) => {
       console.log("🎉 Daily login bonus granted!");
       user.coins += 50;
       user.lastLogin = today;
+      user.bonusClicks = 0;  // ✅ Reset bonus clicks each day
       await user.save();
     }
 
@@ -85,10 +87,16 @@ app.post('/add-coins', async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    if (user.bonusClicks >= 5) {
+      console.log(`❌ User ${username} has used all bonus attempts today.`);
+      return res.status(400).json({ message: "No bonus attempts left today" });
+    }
+
     user.coins += coins;
+    user.bonusClicks += 1;  // ✅ Track bonus clicks per user
     await user.save();
 
-    console.log(`✅ Coins updated for ${username}: ${user.coins}`);
+    console.log(`✅ Coins updated for ${username}: ${user.coins}, Bonus Clicks: ${user.bonusClicks}`);
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
