@@ -161,6 +161,25 @@ app.post('/add-coins', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Fetch Updated User Data API
+app.post('/fetch-user', async (req, res) => {
+  try {
+    const { username } = req.body;
+    console.log(`🔍 Fetching latest data for ${username}`);
+
+    let user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ user });
+
+  } catch (err) {
+    console.error("❌ Error in /fetch-user:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 // ✅ CHECK BACKEND STATUS
 app.get("/", (req, res) => {
