@@ -7,18 +7,20 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ✅ Connect to MongoDB Atlas using .env
+// ✅ Ensure MongoDB URI is Set
 const mongoURI = process.env.MONGO_URI;
 if (!mongoURI) {
   console.error("❌ MONGO_URI is not set in .env file or Render environment variables.");
   process.exit(1); // Stop server if MONGO_URI is missing
 }
 
+// ✅ Connect to MongoDB Atlas with Explicit Database Name
 mongoose.connect(mongoURI, {
+  dbName: "flutter_app", // Force MongoDB to use "flutter_app" database
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log("✅ MongoDB Connected Successfully"))
+.then(() => console.log("✅ MongoDB Connected to flutter_app"))
 .catch(err => {
   console.error("❌ MongoDB Connection Error:", err);
   process.exit(1);
@@ -31,13 +33,14 @@ app.get("/", (req, res) => {
 
 // ✅ User Schema & Model
 const UserSchema = new mongoose.Schema({
-  username: String,
+  username: { type: String, unique: true, required: true },
   coins: { type: Number, default: 50 },
-  lastLogin: String
+  lastLogin: { type: String, required: true }
 });
 
 const User = mongoose.model('User', UserSchema);
 
+// ✅ Login API (Create User & Give Daily Bonus)
 app.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
@@ -61,6 +64,7 @@ app.post('/login', async (req, res) => {
       await user.save();
     }
 
+    console.log("✅ User login successful:", user);
     res.json({ message: "User logged in", user });
 
   } catch (err) {
@@ -69,18 +73,22 @@ app.post('/login', async (req, res) => {
   }
 });
 
-
 // ✅ Bonus Coins API (Click Bonus)
 app.post('/add-coins', async (req, res) => {
   try {
     const { username, coins } = req.body;
+    console.log(`🔍 Adding ${coins} coins to: ${username}`);
 
     let user = await User.findOne({ username });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      console.log("❌ User not found for bonus.");
+      return res.status(404).json({ message: "User not found" });
+    }
 
     user.coins += coins;
     await user.save();
 
+    console.log(`✅ Coins updated for ${username}: ${user.coins}`);
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
