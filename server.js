@@ -64,7 +64,7 @@ app.post('/register', async (req, res) => {
       username, 
       password: hashedPassword, 
       coins: 0, // ✅ Set coins to 0 until first login
-      lastLogin: "", // ✅ Empty lastLogin field until first login
+      lastLogin: "null", // ✅ Empty lastLogin field until first login
       bonusClicks: 0 // ✅ Ensure bonusClicks is initialized
     });
 
