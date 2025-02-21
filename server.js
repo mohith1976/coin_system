@@ -77,6 +77,22 @@ app.post('/register', async (req, res) => {
   }
 });
 
+// ✅ Middleware to Verify Token
+const authenticateUser = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <TOKEN>"
+  
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized: No token provided" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET || "defaultsecret", (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "Unauthorized: Invalid token" });
+    }
+    req.username = decoded.username; // Attach username to request
+    next();
+  });
+};
 
 // ✅ LOGIN API (Authenticate User & Give Daily Bonus)
 app.post('/login', async (req, res) => {
@@ -184,22 +200,7 @@ app.post('/fetch-user', async (req, res) => {
 
 
 
-// ✅ Middleware to Verify Token
-const authenticateUser = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <TOKEN>"
-  
-  if (!token) {
-    return res.status(401).json({ message: "Unauthorized: No token provided" });
-  }
 
-  jwt.verify(token, process.env.JWT_SECRET || "defaultsecret", (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: "Unauthorized: Invalid token" });
-    }
-    req.username = decoded.username; // Attach username to request
-    next();
-  });
-};
 
 
 // ✅ CHECK BACKEND STATUS
