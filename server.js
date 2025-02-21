@@ -182,7 +182,7 @@ app.post('/fetch-user', async (req, res) => {
   }
 });
 
-const jwt = require('jsonwebtoken');
+
 
 // ✅ Middleware to Verify Token
 const authenticateUser = (req, res, next) => {
