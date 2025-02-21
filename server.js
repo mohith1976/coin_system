@@ -38,22 +38,25 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', UserSchema);
 
-// ✅ Login API (User Registration & Daily Login Bonus)
 app.post('/login', async (req, res) => {
   try {
     const { username } = req.body;
-    let today = new Date().toISOString().split('T')[0];
+    console.log(`🔍 Checking user in MongoDB: ${username}`);
 
+    let today = new Date().toISOString().split('T')[0];
     let user = await User.findOne({ username });
 
     if (!user) {
+      console.log("🆕 Creating new user...");
       user = new User({ username, lastLogin: today });
       await user.save();
+      console.log("✅ New user saved in MongoDB:", user);
       return res.json({ message: "User created", user });
     }
 
     if (user.lastLogin !== today) {
-      user.coins += 50; // Daily Login Bonus
+      console.log("🎉 Daily login bonus granted!");
+      user.coins += 50;
       user.lastLogin = today;
       await user.save();
     }
@@ -65,6 +68,7 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ Bonus Coins API (Click Bonus)
 app.post('/add-coins', async (req, res) => {
