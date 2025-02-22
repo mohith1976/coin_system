@@ -4,8 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const twilio = require('twilio');
-const nodemailer = require('nodemailer');
+const nodemailer = require('nodemailer'); // ✅ Only Email OTP
 require('dotenv').config();
 
 const app = express();
@@ -15,13 +14,10 @@ app.use(cors());
 // ✅ Load and Validate Environment Variables
 const mongoURI = process.env.MONGO_URI;
 const jwtSecret = process.env.JWT_SECRET;
-const twilioSID = process.env.TWILIO_SID;
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioPhone = process.env.TWILIO_PHONE;
 const emailUser = process.env.EMAIL_USER;
 const emailPass = process.env.EMAIL_PASS;
 
-if (!mongoURI || !jwtSecret || !twilioSID || !twilioAuthToken || !twilioPhone || !emailUser || !emailPass) {
+if (!mongoURI || !jwtSecret || !emailUser || !emailPass) {
   console.error("❌ ERROR: Missing required environment variables!");
   process.exit(1);
 }
@@ -44,7 +40,7 @@ const UserSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   email: { type: String, unique: true, required: true },
-  phone: { type: String, unique: true, required: true },
+  phone: { type: String, unique: true, required: true }, // ✅ Store without verification
   coins: { type: Number, default: 50 },
   lastLogin: { type: String, required: true },
   bonusClicks: { type: Number, default: 0 }
@@ -55,8 +51,7 @@ const User = mongoose.model('User', UserSchema);
 // ✅ OTP Storage
 const otpStore = new Map();
 
-// ✅ Twilio & Email Configuration
-const twilioClient = twilio(twilioSID, twilioAuthToken);
+// ✅ Email Configuration
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -65,45 +60,32 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ✅ Send OTP via SMS & Email
-async function sendOTP(email, phone) {
+// ✅ Send OTP via Email
+async function sendOTP(email) {
   const otp = crypto.randomInt(100000, 999999).toString();
   otpStore.set(email, otp);
 
-  try {
-    // Send SMS
-    await twilioClient.messages.create({
-      body: `Your OTP is: ${otp}`,
-      from: twilioPhone,
-      to: phone
-    });
+  // Send Email
+  await transporter.sendMail({
+    from: emailUser,
+    to: email,
+    subject: "Your OTP Code",
+    text: `Your OTP is: ${otp}`
+  });
 
-    // Send Email
-    await transporter.sendMail({
-      from: emailUser,
-      to: email,
-      subject: "Your OTP Code",
-      text: `Your OTP is: ${otp}`
-    });
-
-    console.log(`✅ OTP sent to ${email} & ${phone}`);
-    return otp;
-  } catch (error) {
-    console.error("❌ Error sending OTP:", error);
-    throw new Error("OTP sending failed");
-  }
+  return otp;
 }
 
-// ✅ REQUEST OTP API
+// ✅ REQUEST OTP API (Send OTP via Email)
 app.post('/request-otp', async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email } = req.body;
 
-    if (!email || !phone) {
-      return res.status(400).json({ message: "Email and phone are required" });
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    await sendOTP(email, phone);
+    await sendOTP(email);
     res.json({ message: "OTP sent successfully" });
   } catch (err) {
     console.error("❌ Error in /request-otp:", err);
@@ -136,7 +118,7 @@ app.post('/register', async (req, res) => {
       username,
       password: hashedPassword,
       email,
-      phone,
+      phone, // ✅ Store without verification
       coins: 0,
       lastLogin: "null",
       bonusClicks: 0
