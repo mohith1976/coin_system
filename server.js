@@ -1,9 +1,12 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const bcrypt = require('bcryptjs'); // ✅ Secure password hashing
-const jwt = require('jsonwebtoken'); // ✅ Generate authentication tokens
-require('dotenv').config(); // ✅ Load environment variables
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const twilio = require('twilio');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const app = express();
 app.use(express.json());
@@ -12,18 +15,18 @@ app.use(cors());
 // ✅ Load and Validate Environment Variables
 const mongoURI = process.env.MONGO_URI;
 const jwtSecret = process.env.JWT_SECRET;
+const twilioSID = process.env.TWILIO_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhone = process.env.TWILIO_PHONE;
+const emailUser = process.env.EMAIL_USER;
+const emailPass = process.env.EMAIL_PASS;
 
-if (!mongoURI) {
-  console.error("❌ ERROR: MONGO_URI is missing in .env file!");
+if (!mongoURI || !jwtSecret) {
+  console.error("❌ ERROR: Missing required environment variables!");
   process.exit(1);
 }
 
-if (!jwtSecret) {
-  console.error("❌ ERROR: JWT_SECRET is missing in .env file!");
-  process.exit(1);
-}
-
-// ✅ Connect to MongoDB Atlas
+// ✅ Connect to MongoDB
 mongoose.connect(mongoURI, {
   dbName: "flutter_app",
   useNewUrlParser: true,
@@ -37,35 +40,83 @@ mongoose.connect(mongoURI, {
 
 // ✅ User Schema & Model
 const UserSchema = new mongoose.Schema({
+  userId: { type: String, unique: true, required: true },
   username: { type: String, unique: true, required: true },
-  password: { type: String, required: true }, // ✅ Store hashed password
+  password: { type: String, required: true },
+  email: { type: String, unique: true, required: true },
+  phone: { type: String, unique: true, required: true },
   coins: { type: Number, default: 50 },
   lastLogin: { type: String, required: true },
-  bonusClicks: { type: Number, default: 0 } // ✅ Track bonus attempts per user
+  bonusClicks: { type: Number, default: 0 }
 });
 
 const User = mongoose.model('User', UserSchema);
 
-// ✅ REGISTER API (New User Signup)
+// ✅ OTP Storage
+const otpStore = new Map();
+
+// ✅ Twilio & Email Configuration
+const twilioClient = twilio(twilioSID, twilioAuthToken);
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: emailUser,
+    pass: emailPass
+  }
+});
+
+// ✅ Send OTP via SMS & Email
+async function sendOTP(email, phone) {
+  const otp = crypto.randomInt(100000, 999999).toString();
+  otpStore.set(email, otp);
+
+  // Send SMS
+  await twilioClient.messages.create({
+    body: `Your OTP is: ${otp}`,
+    from: twilioPhone,
+    to: phone
+  });
+
+  // Send Email
+  await transporter.sendMail({
+    from: emailUser,
+    to: email,
+    subject: "Your OTP Code",
+    text: `Your OTP is: ${otp}`
+  });
+
+  return otp;
+}
+
+// ✅ REGISTER API (New User Signup with OTP)
 app.post('/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, email, phone, otp } = req.body;
 
-    // 🔹 Check if user already exists
-    let existingUser = await User.findOne({ username });
+    if (!otpStore.has(email) || otpStore.get(email) !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+    otpStore.delete(email);
+
+    // Check if user exists
+    let existingUser = await User.findOne({ $or: [{ username }, { email }, { phone }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Username already taken" });
+      return res.status(400).json({ message: "Username, email, or phone already taken" });
     }
 
-    // 🔹 Hash the password before saving
+    // Hash password & generate User ID
     const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = crypto.randomUUID();
 
-    const newUser = new User({ 
-      username, 
-      password: hashedPassword, 
-      coins: 0, // ✅ Set coins to 0 until first login
-      lastLogin: "null", // ✅ Empty lastLogin field until first login
-      bonusClicks: 0 // ✅ Ensure bonusClicks is initialized
+    const newUser = new User({
+      userId,
+      username,
+      password: hashedPassword,
+      email,
+      phone,
+      coins: 0,
+      lastLogin: "null",
+      bonusClicks: 0
     });
 
     await newUser.save();
@@ -77,70 +128,60 @@ app.post('/register', async (req, res) => {
   }
 });
 
+// ✅ REQUEST OTP API
+app.post('/request-otp', async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    await sendOTP(email, phone);
+    res.json({ message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("❌ Error in /request-otp:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // ✅ Middleware to Verify Token
 const authenticateUser = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <TOKEN>"
-  
+  const token = req.headers.authorization?.split(" ")[1];
+
   if (!token) {
     return res.status(401).json({ message: "Unauthorized: No token provided" });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET || "defaultsecret", (err, decoded) => {
+  jwt.verify(token, jwtSecret, (err, decoded) => {
     if (err) {
       return res.status(403).json({ message: "Unauthorized: Invalid token" });
     }
-    req.username = decoded.username; // Attach username to request
+    req.username = decoded.username;
     next();
   });
 };
 
-// ✅ LOGIN API (Authenticate User & Give Daily Bonus)
+// ✅ LOGIN API (Authenticate User)
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    console.log(`🔍 Checking user in MongoDB: ${username}`);
-
     let user = await User.findOne({ username });
 
-    // 🔹 Check if user exists
     if (!user) {
       return res.status(400).json({ message: "User not found. Please register." });
     }
 
-    // 🔹 Ensure user has a valid password (Fix bcrypt error)
-    if (!user.password || typeof user.password !== "string") {
-      console.error(`❌ Error: User ${username} has an invalid password.`);
-      return res.status(500).json({ message: "Server error: User data corrupted (password missing)" });
-    }
-
-    // 🔹 Validate password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // 🔹 Grant daily login bonus if it's a new day
     let today = new Date().toISOString().split('T')[0];
     if (user.lastLogin !== today) {
-      console.log(`🎉 Daily bonus granted! +50 coins for ${username}`);
       user.coins += 50;
       user.lastLogin = today;
-      user.bonusClicks = 0;  // ✅ Reset bonus clicks each day
+      user.bonusClicks = 0;
       await user.save();
     }
 
-    // 🔹 Fetch latest user data after update
-    const updatedUser = await User.findOne({ username });
-
-    // 🔹 Generate authentication token
-    const token = jwt.sign(
-      { username: user.username },
-      process.env.JWT_SECRET || "defaultsecret",
-      { expiresIn: "7d" }
-    );
-
-    console.log(`✅ Login successful for ${username}`);
-    res.json({ message: "Login successful", token, user: updatedUser });
+    const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
+    res.json({ message: "Login successful", token, user });
 
   } catch (err) {
     console.error("❌ Error in /login:", err);
@@ -148,21 +189,17 @@ app.post('/login', async (req, res) => {
   }
 });
 
-
-// ✅ Protect the Bonus Coins API
+// ✅ Protected API: Bonus Coins
 app.post('/add-coins', authenticateUser, async (req, res) => {
   try {
     const { coins } = req.body;
-    console.log(`🔍 Adding ${coins} coins to: ${req.username}`);
-
     let user = await User.findOne({ username: req.username });
+
     if (!user) {
-      console.log("❌ User not found for bonus.");
       return res.status(404).json({ message: "User not found" });
     }
 
     if (user.bonusClicks >= 5) {
-      console.log(`❌ User ${req.username} has used all bonus attempts today.`);
       return res.status(400).json({ message: "No bonus attempts left today" });
     }
 
@@ -170,7 +207,6 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     user.bonusClicks += 1;
     await user.save();
 
-    console.log(`✅ Coins updated for ${req.username}: ${user.coins}, Bonus Clicks: ${user.bonusClicks}`);
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
@@ -179,36 +215,28 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
   }
 });
 
-// ✅ Fetch User Data API (To Get Updated Coins & Bonus Clicks)
-app.get('/fetch-user', async (req, res) => {
+// ✅ Fetch User Data API
+app.get('/fetch-user', authenticateUser, async (req, res) => {
   try {
-    const username = req.query.username; // 🔹 Get username from query params
-    console.log(`🔍 Fetching user data for ${username}`);
-
-    let user = await User.findOne({ username });
+    let user = await User.findOne({ username: req.username });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     res.json({ message: "User data fetched", user });
+
   } catch (err) {
     console.error("❌ Error in /fetch-user:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-
-
-
-
-
-
-// ✅ CHECK BACKEND STATUS
+// ✅ Check Backend Status
 app.get("/", (req, res) => {
   res.send("Backend is running! 🚀");
 });
 
-// ✅ Fix Port Issue for Render
+// ✅ Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => console.log(`✅ Server running on port ${PORT}`));
