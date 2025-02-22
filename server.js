@@ -179,24 +179,25 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
   }
 });
 
-// ✅ Fetch Updated User Data API
-app.post('/fetch-user', async (req, res) => {
+// ✅ Fetch User Data API (To Get Updated Coins & Bonus Clicks)
+app.get('/fetch-user', async (req, res) => {
   try {
-    const { username } = req.body;
-    console.log(`🔍 Fetching latest data for ${username}`);
+    const username = req.query.username; // 🔹 Get username from query params
+    console.log(`🔍 Fetching user data for ${username}`);
 
     let user = await User.findOne({ username });
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json({ user });
-
+    res.json({ message: "User data fetched", user });
   } catch (err) {
     console.error("❌ Error in /fetch-user:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 
