@@ -21,7 +21,7 @@ const twilioPhone = process.env.TWILIO_PHONE;
 const emailUser = process.env.EMAIL_USER;
 const emailPass = process.env.EMAIL_PASS;
 
-if (!mongoURI || !jwtSecret) {
+if (!mongoURI || !jwtSecret || !twilioSID || !twilioAuthToken || !twilioPhone || !emailUser || !emailPass) {
   console.error("❌ ERROR: Missing required environment variables!");
   process.exit(1);
 }
@@ -32,11 +32,11 @@ mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log("✅ MongoDB Connected Successfully"))
-.catch(err => {
-  console.error("❌ MongoDB Connection Error:", err);
-  process.exit(1);
-});
+  .then(() => console.log("✅ MongoDB Connected Successfully"))
+  .catch(err => {
+    console.error("❌ MongoDB Connection Error:", err);
+    process.exit(1);
+  });
 
 // ✅ User Schema & Model
 const UserSchema = new mongoose.Schema({
@@ -70,23 +70,46 @@ async function sendOTP(email, phone) {
   const otp = crypto.randomInt(100000, 999999).toString();
   otpStore.set(email, otp);
 
-  // Send SMS
-  await twilioClient.messages.create({
-    body: `Your OTP is: ${otp}`,
-    from: twilioPhone,
-    to: phone
-  });
+  try {
+    // Send SMS
+    await twilioClient.messages.create({
+      body: `Your OTP is: ${otp}`,
+      from: twilioPhone,
+      to: phone
+    });
 
-  // Send Email
-  await transporter.sendMail({
-    from: emailUser,
-    to: email,
-    subject: "Your OTP Code",
-    text: `Your OTP is: ${otp}`
-  });
+    // Send Email
+    await transporter.sendMail({
+      from: emailUser,
+      to: email,
+      subject: "Your OTP Code",
+      text: `Your OTP is: ${otp}`
+    });
 
-  return otp;
+    console.log(`✅ OTP sent to ${email} & ${phone}`);
+    return otp;
+  } catch (error) {
+    console.error("❌ Error sending OTP:", error);
+    throw new Error("OTP sending failed");
+  }
 }
+
+// ✅ REQUEST OTP API
+app.post('/request-otp', async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+
+    if (!email || !phone) {
+      return res.status(400).json({ message: "Email and phone are required" });
+    }
+
+    await sendOTP(email, phone);
+    res.json({ message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("❌ Error in /request-otp:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // ✅ REGISTER API (New User Signup with OTP)
 app.post('/register', async (req, res) => {
@@ -124,18 +147,6 @@ app.post('/register', async (req, res) => {
 
   } catch (err) {
     console.error("❌ Error in /register:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ✅ REQUEST OTP API
-app.post('/request-otp', async (req, res) => {
-  try {
-    const { email, phone } = req.body;
-    await sendOTP(email, phone);
-    res.json({ message: "OTP sent successfully" });
-  } catch (err) {
-    console.error("❌ Error in /request-otp:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
