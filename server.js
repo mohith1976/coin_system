@@ -43,7 +43,9 @@ const UserSchema = new mongoose.Schema({
   phone: { type: String, unique: true, required: true }, // ✅ Store without verification
   coins: { type: Number, default: 50 },
   lastLogin: { type: String, required: true },
-  bonusClicks: { type: Number, default: 0 }
+  bonusClicks: { type: Number, default: 0 },
+  otp: { type: String },  // ✅ Store OTP in the database
+  otpExpires: { type: Date } // ✅ Expiry time for OTP (e.g., 10 mins)
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -185,32 +187,32 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-// ✅ Forgot Password - Request OTP
+// ✅ FORGOT PASSWORD: Request OTP
 app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
 
-    // 🔹 Check if email is registered
     let user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ message: "Email is not registered" });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // 🔹 Generate OTP & Expiration Time
     const otp = crypto.randomInt(100000, 999999).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
-    otpStore.set(email, { otp, expiresAt });
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // ✅ OTP expires in 10 minutes
 
-    // 🔹 Send OTP via Email
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    // Send OTP via Email
     await transporter.sendMail({
       from: emailUser,
       to: email,
       subject: "Password Reset OTP",
-      text: `Your OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`
+      text: `Your OTP for password reset is: ${otp}. This OTP expires in 10 minutes.`
     });
 
-    console.log(`✅ Password reset OTP sent to ${email}: ${otp}`);
-    res.json({ message: "OTP sent to your registered email." });
+    res.json({ message: "OTP sent to your email." });
 
   } catch (err) {
     console.error("❌ Error in /forgot-password:", err);
@@ -218,20 +220,21 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
+
 // ✅ RESET PASSWORD AFTER OTP VERIFICATION
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
 
-    if (!otpStore.has(email) || otpStore.get(email) !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-    otpStore.delete(email);
-
     let user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+
+    if (!user || user.otp !== otp || new Date() > user.otpExpires) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
     }
+
+    // Clear OTP after verification
+    user.otp = null;
+    user.otpExpires = null;
 
     // 🔹 Prevent reusing the same password
     const isSamePassword = await bcrypt.compare(newPassword, user.password);
@@ -251,6 +254,7 @@ app.post('/reset-password', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ Protected API: Bonus Coins
 app.post('/add-coins', authenticateUser, async (req, res) => {
