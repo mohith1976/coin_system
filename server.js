@@ -212,6 +212,98 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
   }
 });
 
+// ✅ View User Profile API (Protected)
+app.get('/profile', authenticateUser, async (req, res) => {
+  try {
+    let user = await User.findOne({ username: req.username }).select("-password"); // 🔹 Exclude password
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({ message: "User profile fetched", user });
+  } catch (err) {
+    console.error("❌ Error in /profile:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// ✅ Update Profile API (Protected)
+app.put('/update-profile', authenticateUser, async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+
+    // 🔹 Check if email or phone is already used by another user
+    let existingUser = await User.findOne({ 
+      $or: [{ email }, { phone }],
+      username: { $ne: req.username } // 🔹 Ensure it's not the same user
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ message: "Email or phone number is already taken" });
+    }
+
+    // 🔹 Update user profile
+    let user = await User.findOneAndUpdate(
+      { username: req.username },
+      { email, phone },
+      { new: true }
+    ).select("-password"); // 🔹 Exclude password
+
+    res.json({ message: "Profile updated successfully", user });
+
+  } catch (err) {
+    console.error("❌ Error in /update-profile:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// ✅ Change Password API (Protected)
+app.put('/change-password', authenticateUser, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    let user = await User.findOne({ username: req.username });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🔹 Validate old password
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Incorrect old password" });
+    }
+
+    // 🔹 Hash new password and update
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({ message: "Password changed successfully" });
+
+  } catch (err) {
+    console.error("❌ Error in /change-password:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// ✅ Delete Account API (Protected)
+app.delete('/delete-account', authenticateUser, async (req, res) => {
+  try {
+    let user = await User.findOneAndDelete({ username: req.username });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({ message: "Account deleted successfully" });
+
+  } catch (err) {
+    console.error("❌ Error in /delete-account:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 // ✅ Fetch User Data API
 app.get('/fetch-user', authenticateUser, async (req, res) => {
   try {
