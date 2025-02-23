@@ -200,16 +200,18 @@ app.post('/forgot-password', async (req, res) => {
     const otp = crypto.randomInt(100000, 999999).toString();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // ✅ OTP expires in 10 minutes
 
-    user.otp = otp;
-    user.otpExpires = otpExpires;
-    await user.save();
+    // ✅ Always update OTP and expiration in database
+    await User.updateOne(
+      { email },
+      { $set: { otp, otpExpires } }
+    );
 
     // Send OTP via Email
     await transporter.sendMail({
       from: emailUser,
       to: email,
       subject: "Password Reset OTP",
-      text: `Your OTP for password reset is: ${otp}. This OTP expires in 10 minutes.`
+      text: `Your OTP for password reset is: ${otp}. This OTP expires in 10 minutes.`,
     });
 
     res.json({ message: "OTP sent to your email." });
@@ -220,30 +222,33 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-
+// ✅ RESET PASSWORD AFTER OTP VERIFICATION
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
 
     let user = await User.findOne({ email });
 
-    // ✅ Fix: Ensure OTP exists and is valid
-    if (!user || !user.otp || user.otp.toString() !== otp || new Date() > user.otpExpires) {
+    if (!user) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    // 🔹 Prevent reusing the same password
+    if (!user.otp || user.otp.toString() !== otp || new Date() > user.otpExpires) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    // ✅ Prevent using the same old password
     const isSamePassword = await bcrypt.compare(newPassword, user.password);
     if (isSamePassword) {
       return res.status(400).json({ message: "You cannot use the same old password." });
     }
 
-    // ✅ Fix: Only remove OTP **after** password is successfully changed
+    // ✅ Hash and update new password before clearing OTP
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.otp = null;
-    user.otpExpires = null;
-    await user.save();
+    await User.updateOne(
+      { email },
+      { $set: { password: hashedPassword }, $unset: { otp: 1, otpExpires: 1 } } // ✅ Ensures OTP is removed only after successful password reset
+    );
 
     res.json({ message: "Password reset successfully. You can now log in." });
 
