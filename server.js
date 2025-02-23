@@ -225,29 +225,76 @@ app.get('/profile', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Request OTP for Email Update
+app.post('/request-email-otp', authenticateUser, async (req, res) => {
+  try {
+    const { newEmail } = req.body;
+    
+    // 🔹 Check if email is already in use
+    let emailExists = await User.findOne({ email: newEmail });
+    if (emailExists) {
+      return res.status(400).json({ message: "Email is already in use" });
+    }
+
+    // 🔹 Generate OTP and store it
+    const otp = crypto.randomInt(100000, 999999).toString();
+    otpStore.set(newEmail, otp);
+
+    // 🔹 Send OTP via email
+    await transporter.sendMail({
+      from: emailUser,
+      to: newEmail,
+      subject: "Email Verification OTP",
+      text: `Your OTP for email update is: ${otp}`
+    });
+
+    console.log(`✅ OTP sent to new email: ${newEmail}`);
+    res.json({ message: "OTP sent to new email" });
+
+  } catch (err) {
+    console.error("❌ Error in /request-email-otp:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 // ✅ Update Profile API (Protected)
 app.put('/update-profile', authenticateUser, async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email, phone, otp } = req.body;
 
-    // 🔹 Check if email or phone is already used by another user
-    let existingUser = await User.findOne({ 
-      $or: [{ email }, { phone }],
-      username: { $ne: req.username } // 🔹 Ensure it's not the same user
-    });
+    let user = await User.findOne({ username: req.username });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    if (existingUser) {
-      return res.status(400).json({ message: "Email or phone number is already taken" });
+    // 🔹 Prevent updating to the same email or phone
+    if (email === user.email && phone === user.phone) {
+      return res.status(400).json({ message: "You cannot update to the same old email or phone." });
+    }
+
+    // 🔹 Check if the new email or phone is already used by another user
+    if (email && email !== user.email) {
+      let emailExists = await User.findOne({ email });
+      if (emailExists) return res.status(400).json({ message: "Email is already in use." });
+
+      // 🔹 Verify OTP for email change
+      if (!otpStore.has(email) || otpStore.get(email) !== otp) {
+        return res.status(400).json({ message: "Invalid OTP for email verification" });
+      }
+      otpStore.delete(email);
+    }
+
+    if (phone && phone !== user.phone) {
+      let phoneExists = await User.findOne({ phone });
+      if (phoneExists) return res.status(400).json({ message: "Phone number is already in use." });
     }
 
     // 🔹 Update user profile
-    let user = await User.findOneAndUpdate(
-      { username: req.username },
-      { email, phone },
-      { new: true }
-    ).select("-password"); // 🔹 Exclude password
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+
+    await user.save();
 
     res.json({ message: "Profile updated successfully", user });
 
@@ -256,6 +303,7 @@ app.put('/update-profile', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 // ✅ Change Password API (Protected)
@@ -272,6 +320,12 @@ app.put('/change-password', authenticateUser, async (req, res) => {
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Incorrect old password" });
+    }
+
+    // 🔹 Prevent changing to the same old password
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: "You cannot use the same old password." });
     }
 
     // 🔹 Hash new password and update
