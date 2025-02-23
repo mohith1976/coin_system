@@ -218,44 +218,33 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-// ✅ Reset Password API
+// ✅ RESET PASSWORD AFTER OTP VERIFICATION
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
 
-    // 🔹 Check if OTP exists & is valid
-    if (!otpStore.has(email)) {
-      return res.status(400).json({ message: "Invalid OTP request" });
+    if (!otpStore.has(email) || otpStore.get(email) !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
     }
-
-    const storedOtpData = otpStore.get(email);
-    if (storedOtpData.otp !== otp) {
-      return res.status(400).json({ message: "Incorrect OTP" });
-    }
-
-    // 🔹 Check if OTP is expired
-    if (Date.now() > storedOtpData.expiresAt) {
-      otpStore.delete(email);
-      return res.status(400).json({ message: "OTP expired" });
-    }
-
-    // 🔹 Remove OTP after use
     otpStore.delete(email);
 
-    // 🔹 Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // 🔹 Update the user's password
-    let user = await User.findOneAndUpdate(
-      { email },
-      { password: hashedPassword }
-    );
-
+    let user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json({ message: "Password reset successful. You can now log in." });
+    // 🔹 Prevent reusing the same password
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: "You cannot use the same old password." });
+    }
+
+    // 🔹 Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({ message: "Password reset successfully. You can now log in." });
 
   } catch (err) {
     console.error("❌ Error in /reset-password:", err);
