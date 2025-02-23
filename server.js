@@ -229,25 +229,27 @@ app.post('/reset-password', async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    if (!user) {
+    // ✅ Ensure OTP exists and is valid
+    if (!user || !user.otp || user.otp.toString() !== otp || new Date() > user.otpExpires) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    if (!user.otp || user.otp.toString() !== otp || new Date() > user.otpExpires) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
-    }
-
-    // ✅ Prevent using the same old password
+    // ✅ Prevent reusing the same password
     const isSamePassword = await bcrypt.compare(newPassword, user.password);
     if (isSamePassword) {
       return res.status(400).json({ message: "You cannot use the same old password." });
     }
 
-    // ✅ Hash and update new password before clearing OTP
+    // ✅ Hash new password **before modifying OTP**
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // ✅ Update password & clear OTP in a **single database update**
     await User.updateOne(
-      { email },
-      { $set: { password: hashedPassword }, $unset: { otp: 1, otpExpires: 1 } } // ✅ Ensures OTP is removed only after successful password reset
+      { email, otp }, // Ensure we only modify if OTP still matches
+      { 
+        $set: { password: hashedPassword },
+        $unset: { otp: 1, otpExpires: 1 } // ✅ Ensures OTP is removed only after success
+      }
     );
 
     res.json({ message: "Password reset successfully. You can now log in." });
@@ -257,6 +259,7 @@ app.post('/reset-password', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 // ✅ Protected API: Bonus Coins
