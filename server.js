@@ -76,17 +76,21 @@ async function sendOTP(email) {
   return otp;
 }
 
-// ✅ REQUEST OTP API (Send OTP via Email)
+// ✅ REQUEST OTP API (Check for Duplicate Email & Phone First)
 app.post('/request-otp', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, phone } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+    // 🔹 Check if email or phone already exists
+    let existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email or phone number is already registered" });
     }
 
-    await sendOTP(email);
+    // 🔹 Send OTP if email & phone are not already used
+    await sendOTP(email, phone);
     res.json({ message: "OTP sent successfully" });
+
   } catch (err) {
     console.error("❌ Error in /request-otp:", err);
     res.status(500).json({ message: "Server error" });
