@@ -185,6 +185,83 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Forgot Password - Request OTP
+app.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // 🔹 Check if email is registered
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "Email is not registered" });
+    }
+
+    // 🔹 Generate OTP & Expiration Time
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+    otpStore.set(email, { otp, expiresAt });
+
+    // 🔹 Send OTP via Email
+    await transporter.sendMail({
+      from: emailUser,
+      to: email,
+      subject: "Password Reset OTP",
+      text: `Your OTP for password reset is: ${otp}. This OTP is valid for 5 minutes.`
+    });
+
+    console.log(`✅ Password reset OTP sent to ${email}: ${otp}`);
+    res.json({ message: "OTP sent to your registered email." });
+
+  } catch (err) {
+    console.error("❌ Error in /forgot-password:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ✅ Reset Password API
+app.post('/reset-password', async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    // 🔹 Check if OTP exists & is valid
+    if (!otpStore.has(email)) {
+      return res.status(400).json({ message: "Invalid OTP request" });
+    }
+
+    const storedOtpData = otpStore.get(email);
+    if (storedOtpData.otp !== otp) {
+      return res.status(400).json({ message: "Incorrect OTP" });
+    }
+
+    // 🔹 Check if OTP is expired
+    if (Date.now() > storedOtpData.expiresAt) {
+      otpStore.delete(email);
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    // 🔹 Remove OTP after use
+    otpStore.delete(email);
+
+    // 🔹 Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 🔹 Update the user's password
+    let user = await User.findOneAndUpdate(
+      { email },
+      { password: hashedPassword }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ message: "Password reset successful. You can now log in." });
+
+  } catch (err) {
+    console.error("❌ Error in /reset-password:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // ✅ Protected API: Bonus Coins
 app.post('/add-coins', authenticateUser, async (req, res) => {
