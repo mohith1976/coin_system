@@ -221,20 +221,16 @@ app.post('/forgot-password', async (req, res) => {
 });
 
 
-// ✅ RESET PASSWORD AFTER OTP VERIFICATION
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
 
     let user = await User.findOne({ email });
 
-    if (!user || user.otp !== otp || new Date() > user.otpExpires) {
+    // ✅ Fix: Ensure OTP exists and is valid
+    if (!user || !user.otp || user.otp.toString() !== otp || new Date() > user.otpExpires) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
-
-    // Clear OTP after verification
-    user.otp = null;
-    user.otpExpires = null;
 
     // 🔹 Prevent reusing the same password
     const isSamePassword = await bcrypt.compare(newPassword, user.password);
@@ -242,9 +238,11 @@ app.post('/reset-password', async (req, res) => {
       return res.status(400).json({ message: "You cannot use the same old password." });
     }
 
-    // 🔹 Hash and update new password
+    // ✅ Fix: Only remove OTP **after** password is successfully changed
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
+    user.otp = null;
+    user.otpExpires = null;
     await user.save();
 
     res.json({ message: "Password reset successfully. You can now log in." });
