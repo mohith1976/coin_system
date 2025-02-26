@@ -306,6 +306,20 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
+// ✅ GET TOP 10 USERS FOR LEADERBOARD
+app.get('/leaderboard', async (req, res) => {
+  try {
+    const topUsers = await User.find({})
+      .sort({ coins: -1 }) // Sort by coins in descending order
+      .limit(10) // Get top 10 users
+      .select("username coins"); // Select only necessary fields
+
+    res.json({ leaderboard: topUsers });
+  } catch (err) {
+    console.error("❌ Error in /leaderboard:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 // ✅ Protected API: Bonus Coins
