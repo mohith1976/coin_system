@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const cron = require("node-cron");
-const Transaction = require('./models/Transaction'); // Make sure to import Transaction model
 
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -68,7 +67,7 @@ const transactionSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
-
+const Transaction = mongoose.model("Transaction", transactionSchema);
 
 
 
