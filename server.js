@@ -46,6 +46,8 @@ const UserSchema = new mongoose.Schema({
   bonusClicks: { type: Number, default: 0 },
   otp: { type: String },  // ✅ Store OTP in the database
   otpExpires: { type: Date } // ✅ Expiry time for OTP (e.g., 10 mins)
+  referralCode: { type: String, unique: true, required: true },  // ✅ New Field
+  referredBy: { type: String, default: null } // ✅ Stores the referral code of the referrer
 });
 
 const User = mongoose.model('User', UserSchema);
