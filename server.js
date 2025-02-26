@@ -45,7 +45,7 @@ const UserSchema = new mongoose.Schema({
   lastLogin: { type: String, required: true },
   bonusClicks: { type: Number, default: 0 },
   otp: { type: String },  // ✅ Store OTP in the database
-  otpExpires: { type: Date } // ✅ Expiry time for OTP (e.g., 10 mins)
+  otpExpires: { type: Date }, // ✅ Expiry time for OTP (e.g., 10 mins)
   referralCode: { type: String, unique: true, required: true },  // ✅ New Field
   referredBy: { type: String, default: null } // ✅ Stores the referral code of the referrer
 });
@@ -104,20 +104,24 @@ app.post('/request-otp', async (req, res) => {
 // ✅ REGISTER API (New User Signup with OTP)
 app.post('/register', async (req, res) => {
   try {
-    const { username, password, email, phone, otp } = req.body;
+    const { username, password, email, phone, otp, referralCode } = req.body;
 
+    // ✅ Validate OTP
     if (!otpStore.has(email) || otpStore.get(email) !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
     otpStore.delete(email);
 
-    // Check if user exists
+    // ✅ Check if user already exists
     let existingUser = await User.findOne({ $or: [{ username }, { email }, { phone }] });
     if (existingUser) {
       return res.status(400).json({ message: "Username, email, or phone already taken" });
     }
 
-    // Hash password & generate User ID
+    // ✅ Generate Referral Code (6-character random)
+    const userReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    // ✅ Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     const userId = crypto.randomUUID();
 
@@ -126,20 +130,34 @@ app.post('/register', async (req, res) => {
       username,
       password: hashedPassword,
       email,
-      phone, // ✅ Store without verification
-      coins: 0,
+      phone,
+      coins: 50,  // ✅ Default 50 coins
       lastLogin: "null",
-      bonusClicks: 0
+      bonusClicks: 0,
+      referralCode: userReferralCode, // ✅ Store user’s unique referral code
+      referredBy: null
     });
 
+    // ✅ Handle Referral Bonus
+    if (referralCode) {
+      let referrer = await User.findOne({ referralCode });
+      if (referrer) {
+        newUser.referredBy = referralCode;
+        newUser.coins += 25; // ✅ New user gets 25 extra coins
+        referrer.coins += 50; // ✅ Referrer gets 50 coins
+        await referrer.save();
+      }
+    }
+
     await newUser.save();
-    res.json({ message: "User registered successfully. Please log in." });
+    res.json({ message: "User registered successfully!", referralCode: userReferralCode });
 
   } catch (err) {
     console.error("❌ Error in /register:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ Middleware to Verify Token
 const authenticateUser = (req, res, next) => {
