@@ -70,14 +70,7 @@ const transactionSchema = new mongoose.Schema({
 
 const Transaction = mongoose.model("Transaction", transactionSchema);
 
-// ✅ Function to Log Transactions
-async function logTransaction(userId, amount, type, reason) {
-  try {
-    await Transaction.create({ userId, amount, type, reason });
-  } catch (err) {
-    console.error("❌ Error logging transaction:", err);
-  }
-}
+
 
 
 const logTransaction = async (user, amount, reason) => {
