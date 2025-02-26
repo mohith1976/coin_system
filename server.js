@@ -320,6 +320,41 @@ app.get('/leaderboard', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Get Referral Info API
+app.get('/referral-info', authenticateUser, async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.username });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // ✅ Find all users who used this user's referral code
+    const referredUsers = await User.find({ referredBy: user.referralCode });
+
+    // ✅ Calculate total earnings from referrals
+    let totalEarnings = 0;
+    const formattedReferredUsers = referredUsers.map((referredUser) => {
+      const earnedCoins = 50; // Coins earned per referral
+      totalEarnings += earnedCoins;
+      return {
+        username: referredUser.username,
+        earnedCoins,
+      };
+    });
+
+    res.json({
+      referralCode: user.referralCode,
+      totalReferrals: referredUsers.length,
+      totalEarnings,
+      referredUsers: formattedReferredUsers,
+    });
+
+  } catch (err) {
+    console.error("❌ Error in /referral-info:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 // ✅ Protected API: Bonus Coins
