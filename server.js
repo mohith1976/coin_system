@@ -72,19 +72,21 @@ const Transaction = mongoose.model("Transaction", transactionSchema);
 
 
 
-const logTransaction = async (user, amount, reason) => {
+const logTransaction = async (user, amount, reason, type) => {
   try {
-      const transaction = new Transaction({
-          userId: user.userId, // ✅ Use userId instead of _id
-          amount,
-          reason,
-          date: new Date()
-      });
-      await transaction.save();
+    const transaction = new Transaction({
+      userId: user._id, // ✅ Corrected: Use user._id
+      amount,
+      reason,
+      type, // ✅ Added: Ensure type ("earn" or "spend") is logged
+      timestamp: new Date()
+    });
+    await transaction.save();
   } catch (err) {
-      console.error("❌ Error logging transaction:", err);
+    console.error("❌ Error logging transaction:", err);
   }
 };
+
 // ✅ OTP Storage
 const otpStore = new Map();
 
@@ -179,7 +181,8 @@ app.post('/register', async (req, res) => {
         newUser.coins += 25; // ✅ New user gets 25 extra coins
         referrer.coins += 50; // ✅ Referrer gets 50 coins
         await referrer.save();
-        await logTransaction(userId, coins, "earn", "referal bonus"); 
+        await logTransaction(newUser, 25, "Referred by another user", "earn"); 
+        await logTransaction(referrer, 50, "Referral bonus", "earn"); 
       }
     }
 
@@ -231,7 +234,7 @@ app.post('/login', async (req, res) => {
       user.lastLogin = today;
       user.bonusClicks = 0;
       await user.save();
-      await logTransaction(userId, coins, "earn", "Daily login bonus"); 
+      await logTransaction(user, 50, "Daily login bonus", "earn"); 
     }
 
     const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
@@ -258,7 +261,7 @@ app.post('/daily-login', authenticateUser, async (req, res) => {
       user.lastLogin = today;
       user.bonusClicks = 0;
       await user.save();
-      await logTransaction(userId, coins, "earn", "Daily login bonus"); 
+      await logTransaction(user, 50, "Daily login bonus", "earn");  
     }
 
     res.json({ message: "Daily login bonus added", user });
@@ -305,7 +308,7 @@ app.post('/daily-checkin', authenticateUser, async (req, res) => {
       user.lastCheckInDate = today;
 
       await user.save();
-      await logTransaction(userId, coins, "earn", "Daily streak bonus"); 
+      await logTransaction(user, coinsToAdd, `Daily check-in streak ${newStreak}`, "earn");
 
       res.json({
           message: `Daily check-in successful! You received ${coinsToAdd} coins.`,
@@ -460,7 +463,7 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     user.coins += coins;
     user.bonusClicks += 1;
     await user.save();
-    await logTransaction(userId, coins, "earn", " ad bonus"); 
+    await logTransaction(user, 10, "Daily ad bonus", "earn");   
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
