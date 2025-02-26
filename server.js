@@ -619,16 +619,23 @@ app.delete('/delete-account', authenticateUser, async (req, res) => {
 
 app.get('/transaction-history', authenticateUser, async (req, res) => {
   try {
-    const userId = req.user.userId; // ✅ Ensure correct user ID
+    // ✅ Fetch user details based on username
+    const user = await User.findOne({ username: req.username });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const userId = user._id; // ✅ Get correct user ID
 
     // ✅ Fetch transactions from the last 10 days
     const tenDaysAgo = new Date();
     tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
 
     const transactions = await Transaction.find({
-      userId: userId,  // ✅ Ensure correct user filtering
+      userId: userId, // ✅ Use correct user ID
       timestamp: { $gte: tenDaysAgo }
-    }).sort({ timestamp: -1 }); // ✅ Sort from newest to oldest
+    }).sort({ timestamp: -1 });
 
     console.log("✅ Fetched Transactions:", transactions);
     res.json({ transactions });
@@ -638,6 +645,7 @@ app.get('/transaction-history', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ Auto-Delete Old Transactions (Runs Every Day)
 cron.schedule("0 0 * * *", async () => {
