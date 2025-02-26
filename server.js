@@ -207,6 +207,32 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Check Daily Login & Add Coins if Needed
+app.post('/daily-login', authenticateUser, async (req, res) => {
+  try {
+    let user = await User.findOne({ username: req.username });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let today = new Date().toISOString().split('T')[0];
+
+    if (user.lastLogin !== today) {
+      user.coins += 50; // ✅ Give 50 coins for first login of the day
+      user.lastLogin = today;
+      user.bonusClicks = 0;
+      await user.save();
+    }
+
+    res.json({ message: "Daily login bonus added", user });
+
+  } catch (err) {
+    console.error("❌ Error in /daily-login:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // ✅ FORGOT PASSWORD: Request OTP
 app.post('/forgot-password', async (req, res) => {
   try {
