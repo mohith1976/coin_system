@@ -68,7 +68,7 @@ const transactionSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
-const Transaction = mongoose.model("Transaction", transactionSchema);
+
 
 
 
