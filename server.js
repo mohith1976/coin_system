@@ -51,7 +51,8 @@ const UserSchema = new mongoose.Schema({
   referralCode: { type: String, unique: true, required: true },  // ✅ New Field
   referredBy: { type: String, default: null }, // ✅ Stores the referral code of the referrer
   dailyStreak: { type: Number, default: 0 }, 
-  lastCheckInDate: { type: String, default: "" }
+  lastCheckInDate: { type: String, default: "" },
+  currentToken: { type: String } // ✅ Store latest login token
 
 });
 
@@ -197,20 +198,27 @@ app.post('/register', async (req, res) => {
 
 
 // ✅ Middleware to Verify Token
-const authenticateUser = (req, res, next) => {
+const authenticateUser = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
     return res.status(401).json({ message: "Unauthorized: No token provided" });
   }
 
-  jwt.verify(token, jwtSecret, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ message: "Unauthorized: Invalid token" });
+  try {
+    const decoded = jwt.verify(token, jwtSecret);
+    const user = await User.findOne({ username: decoded.username });
+
+    // ✅ Ensure token matches the latest one stored in DB
+    if (!user || user.currentToken !== token) {
+      return res.status(403).json({ message: "Session expired. Please log in again." });
     }
+
     req.username = decoded.username;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ message: "Unauthorized: Invalid token" });
+  }
 };
 
 // ✅ LOGIN API (Authenticate User)
@@ -237,7 +245,11 @@ app.post('/login', async (req, res) => {
       await logTransaction(user, 50, "Daily login bonus", "earn"); 
     }
 
+    // ✅ Generate token & store in DB to track sessions
     const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
+    user.currentToken = token;
+    await user.save();
+
     res.json({ message: "Login successful", token, user });
 
   } catch (err) {
@@ -245,6 +257,7 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 // ✅ Check Daily Login & Add Coins if Needed
 app.post('/daily-login', authenticateUser, async (req, res) => {
   try {
@@ -268,6 +281,20 @@ app.post('/daily-login', authenticateUser, async (req, res) => {
 
   } catch (err) {
     console.error("❌ Error in /daily-login:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// ✅ LOGOUT API
+app.post('/logout', authenticateUser, async (req, res) => {
+  try {
+    await User.findOneAndUpdate(
+      { username: req.username },
+      { $unset: { currentToken: "" } } // ✅ Remove token from DB
+    );
+
+    res.json({ message: "Logged out successfully." });
+  } catch (err) {
+    console.error("❌ Error in /logout:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
