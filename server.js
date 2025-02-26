@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const cron = require("node-cron");
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer'); // ✅ Only Email OTP
@@ -605,7 +606,35 @@ app.delete('/delete-account', authenticateUser, async (req, res) => {
   }
 });
 
+app.get('/transaction-history', authenticateUser, async (req, res) => {
+  try {
+    const { userId } = req;
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
 
+    const transactions = await Transaction.find({
+      userId,
+      timestamp: { $gte: tenDaysAgo }
+    }).sort({ timestamp: -1 });
+
+    res.json({ transactions });
+
+  } catch (err) {
+    console.error("❌ Error fetching transactions:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// ✅ Auto-Delete Old Transactions (Runs Every Day)
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    await Transaction.deleteMany({ timestamp: { $lt: tenDaysAgo } });
+    console.log("🗑 Old transactions deleted.");
+  } catch (err) {
+    console.error("❌ Error deleting old transactions:", err);
+  }
+});
 // ✅ Fetch User Data API
 app.get('/fetch-user', authenticateUser, async (req, res) => {
   try {
