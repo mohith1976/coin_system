@@ -619,22 +619,26 @@ app.delete('/delete-account', authenticateUser, async (req, res) => {
 
 app.get('/transaction-history', authenticateUser, async (req, res) => {
   try {
-    const { userId } = req;
+    const userId = req.user._id; // ✅ Ensure correct user ID
+
+    // ✅ Fetch transactions from the last 10 days
     const tenDaysAgo = new Date();
     tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
 
     const transactions = await Transaction.find({
-      userId,
+      userId: userId,  // ✅ Ensure correct user filtering
       timestamp: { $gte: tenDaysAgo }
-    }).sort({ timestamp: -1 });
+    }).sort({ timestamp: -1 }); // ✅ Sort from newest to oldest
 
+    console.log("✅ Fetched Transactions:", transactions);
     res.json({ transactions });
 
   } catch (err) {
-    console.error("❌ Error fetching transactions:", err);
+    console.error("❌ Error in /transaction-history:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 // ✅ Auto-Delete Old Transactions (Runs Every Day)
 cron.schedule("0 0 * * *", async () => {
   try {
