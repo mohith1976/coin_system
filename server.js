@@ -47,7 +47,10 @@ const UserSchema = new mongoose.Schema({
   otp: { type: String },  // ✅ Store OTP in the database
   otpExpires: { type: Date }, // ✅ Expiry time for OTP (e.g., 10 mins)
   referralCode: { type: String, unique: true, required: true },  // ✅ New Field
-  referredBy: { type: String, default: null } // ✅ Stores the referral code of the referrer
+  referredBy: { type: String, default: null }, // ✅ Stores the referral code of the referrer
+  dailyStreak: { type: Number, default: 0 }, 
+  lastCheckInDate: { type: String, default: "" }
+
 });
 
 const User = mongoose.model('User', UserSchema);
@@ -232,6 +235,55 @@ app.post('/daily-login', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ DAILY CHECK-IN BONUS API
+app.post('/daily-checkin', authenticateUser, async (req, res) => {
+  try {
+      let user = await User.findOne({ username: req.username });
+
+      if (!user) {
+          return res.status(404).json({ message: "User not found" });
+      }
+
+      const today = new Date().toISOString().split('T')[0]; // Get YYYY-MM-DD format
+
+      // If user already checked in today, don't give extra coins
+      if (user.lastCheckInDate === today) {
+          return res.status(400).json({ message: "Already checked in today!" });
+      }
+
+      let newStreak = user.dailyStreak + 1; // Increase streak
+      if (newStreak > 7) newStreak = 1; // Reset after 7 days
+
+      // If user missed a day, reset streak to 1
+      const lastCheckIn = new Date(user.lastCheckInDate);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if (user.lastCheckInDate && lastCheckIn.toISOString().split('T')[0] !== yesterday.toISOString().split('T')[0]) {
+          newStreak = 1; // Reset streak if user missed a day
+      }
+
+      // Daily coin rewards based on streak
+      const dailyRewards = [0, 10, 20, 30, 40, 50, 60, 70]; // Index 1-7 (0 is unused)
+      const coinsToAdd = dailyRewards[newStreak];
+
+      user.coins += coinsToAdd;
+      user.dailyStreak = newStreak;
+      user.lastCheckInDate = today;
+
+      await user.save();
+
+      res.json({
+          message: `Daily check-in successful! You received ${coinsToAdd} coins.`,
+          user
+      });
+
+  } catch (err) {
+      console.error("❌ Error in /daily-checkin:", err);
+      res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 // ✅ FORGOT PASSWORD: Request OTP
 app.post('/forgot-password', async (req, res) => {
