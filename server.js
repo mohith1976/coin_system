@@ -619,7 +619,7 @@ app.delete('/delete-account', authenticateUser, async (req, res) => {
 
 app.get('/transaction-history', authenticateUser, async (req, res) => {
   try {
-    const userId = req.user._id; // ✅ Ensure correct user ID
+    const userId = req.user.userId; // ✅ Ensure correct user ID
 
     // ✅ Fetch transactions from the last 10 days
     const tenDaysAgo = new Date();
