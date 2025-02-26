@@ -55,6 +55,27 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', UserSchema);
 
+
+// ✅ Define Transaction Schema
+const transactionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  amount: { type: Number, required: true },
+  type: { type: String, enum: ["earn", "spend"], required: true },
+  reason: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now }
+});
+
+const Transaction = mongoose.model("Transaction", transactionSchema);
+
+// ✅ Function to Log Transactions
+async function logTransaction(userId, amount, type, reason) {
+  try {
+    await Transaction.create({ userId, amount, type, reason });
+  } catch (err) {
+    console.error("❌ Error logging transaction:", err);
+  }
+}
+
 // ✅ OTP Storage
 const otpStore = new Map();
 
@@ -149,6 +170,7 @@ app.post('/register', async (req, res) => {
         newUser.coins += 25; // ✅ New user gets 25 extra coins
         referrer.coins += 50; // ✅ Referrer gets 50 coins
         await referrer.save();
+        await logTransaction(user._id, coins, "earn", "referal bonus"); 
       }
     }
 
@@ -200,6 +222,7 @@ app.post('/login', async (req, res) => {
       user.lastLogin = today;
       user.bonusClicks = 0;
       await user.save();
+      await logTransaction(user._id, coins, "earn", "Daily login bonus"); 
     }
 
     const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: "7d" });
@@ -226,6 +249,7 @@ app.post('/daily-login', authenticateUser, async (req, res) => {
       user.lastLogin = today;
       user.bonusClicks = 0;
       await user.save();
+      await logTransaction(user._id, coins, "earn", "Daily login bonus"); 
     }
 
     res.json({ message: "Daily login bonus added", user });
@@ -272,6 +296,7 @@ app.post('/daily-checkin', authenticateUser, async (req, res) => {
       user.lastCheckInDate = today;
 
       await user.save();
+      await logTransaction(user._id, coins, "earn", "Daily streak bonus"); 
 
       res.json({
           message: `Daily check-in successful! You received ${coinsToAdd} coins.`,
@@ -426,7 +451,7 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     user.coins += coins;
     user.bonusClicks += 1;
     await user.save();
-
+    await logTransaction(user._id, coins, "earn", " ad bonus"); 
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
