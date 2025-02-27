@@ -473,6 +473,15 @@ app.get('/referral-info', authenticateUser, async (req, res) => {
 });
 
 
+cron.schedule("0 0 * * *", async () => {
+  try {
+    await User.updateMany({}, { $set: { bonusClicks: 0 } });
+    console.log("✅ Bonus click limits reset for all users.");
+  } catch (err) {
+    console.error("❌ Error resetting bonus clicks:", err);
+  }
+});
+
 // ✅ Protected API: Bonus Coins
 app.post('/add-coins', authenticateUser, async (req, res) => {
   try {
@@ -490,7 +499,9 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     user.coins += coins;
     user.bonusClicks += 1;
     await user.save();
-    await logTransaction(user, 10, "Daily ad bonus", "earn");   
+    
+    await logTransaction(user, 10, "Daily ad bonus", "earn");  
+
     res.json({ message: "Coins updated", user });
 
   } catch (err) {
