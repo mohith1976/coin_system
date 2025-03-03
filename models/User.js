@@ -16,7 +16,8 @@ const UserSchema = new mongoose.Schema({
   referredBy: { type: String, default: null }, // ✅ Stores the referral code of the referrer
   dailyStreak: { type: Number, default: 0 }, 
   lastCheckInDate: { type: String, default: "" },
-  currentToken: { type: String } // ✅ Store latest login token
+  currentToken: { type: String }, // ✅ Store latest login token
+  premiumExpiry: { type: Date, default: null }
 
 });
 
