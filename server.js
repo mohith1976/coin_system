@@ -495,35 +495,46 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
   }
 });
 
+// ✅ Premium Access API (Deducts 50 Coins & Grants 2 Hours Access)
 app.post('/premium-access', authenticateUser, async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.username });
+    let user = await User.findOne({ username: req.username });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // ✅ Check if user has enough coins
     if (user.coins < 50) {
-      return res.status(400).json({ message: "Not enough coins to enter premium page!" });
+      return res.status(400).json({ message: "Not enough coins for premium access!" });
     }
 
-    // Deduct coins & Add to Central Pool
+    // ✅ Deduct 50 coins from user
     user.coins -= 50;
-    await updateCentralPool(50); // ✅ Add spent coins to the central pool
-    await logTransaction(user, 50, "Premium page access", "spend");
 
-    // ✅ Grant 2-hour access
-    const accessExpiresAt = Date.now() + 2 * 60 * 60 * 1000; // Current Time + 2 Hours
-    user.premiumAccessExpires = accessExpiresAt;
+    // ✅ Send deducted coins to Central Pool
+    let pool = await CentralPool.findOne();
+    if (!pool) {
+      return res.status(500).json({ message: "Central pool not found!" });
+    }
+    pool.balance += 50; // ✅ Add coins to pool
+    await pool.save();
+
+    // ✅ Update Premium Access Expiry (2 Hours)
+    user.premiumExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
     await user.save();
 
-    res.json({ message: "Premium access granted!", accessExpiresAt });
+    // ✅ Log the transaction
+    await logTransaction(user, 50, "Premium access purchase", "spend");
+
+    res.json({ message: "Premium access granted for 2 hours!", premiumExpiry: user.premiumExpiry });
 
   } catch (err) {
     console.error("❌ Error in /premium-access:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.get('/check-premium-access', authenticateUser, async (req, res) => {
   try {
     const user = await User.findOne({ username: req.username });
