@@ -494,13 +494,14 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 // ✅ Function to update Central Pool balance
 const updateCentralPool = async (amount) => {
   try {
     let pool = await CentralPool.findOne();
     if (!pool) {
-      console.error("❌ Central pool not found! Creating a new one.");
-      pool = new CentralPool({ balance: 0 }); // Create if not exists
+      console.error("❌ Central pool not found! ");
+      
     }
 
     pool.balance += amount;
@@ -511,14 +512,24 @@ const updateCentralPool = async (amount) => {
   }
 };
 
-// ✅ Premium Access API (Deducts 50 Coins & Grants 2 Hours Access)
-// ✅ Premium Access API (Deducts 50 Coins & Grants 2 Hours Access)
+
+// ✅ Premium Access API (Deducts 50 Coins Only If Needed & Grants 2 Hours Access)
 app.post('/premium-access', authenticateUser, async (req, res) => {
   try {
     let user = await User.findOne({ username: req.username });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    const now = Date.now();
+
+    // ✅ If user already has active premium access, don't deduct coins
+    if (user.premiumExpiry && user.premiumExpiry > now) {
+      return res.json({ 
+        message: "You already have premium access!", 
+        premiumExpiry: user.premiumExpiry 
+      });
     }
 
     // ✅ Check if user has enough coins
@@ -530,10 +541,10 @@ app.post('/premium-access', authenticateUser, async (req, res) => {
     user.coins -= 50;
 
     // ✅ Update Central Pool
-    await updateCentralPool(50); // ✅ Now using the function
-
-    // ✅ Update Premium Access Expiry (2 Hours)
-    user.premiumExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    await updateCentralPool(50);
+   
+    // ✅ Set Premium Access Expiry (2 Hours from Now)
+    user.premiumExpiry = new Date(now + 2 * 60 * 60 * 1000); // Adds 2 hours
     await user.save();
 
     // ✅ Log the transaction
@@ -547,27 +558,6 @@ app.post('/premium-access', authenticateUser, async (req, res) => {
   }
 });
 
-
-app.get('/check-premium-access', authenticateUser, async (req, res) => {
-  try {
-    const user = await User.findOne({ username: req.username });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const now = Date.now();
-    if (user.premiumAccessExpires && user.premiumAccessExpires > now) {
-      return res.json({ accessGranted: true, expiresAt: user.premiumAccessExpires });
-    }
-
-    res.json({ accessGranted: false, message: "Premium access expired! Spend 50 coins to re-enter." });
-
-  } catch (err) {
-    console.error("❌ Error in /check-premium-access:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 
 // ✅ View User Profile API (Protected)
