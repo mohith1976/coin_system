@@ -494,7 +494,24 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Function to update Central Pool balance
+const updateCentralPool = async (amount) => {
+  try {
+    let pool = await CentralPool.findOne();
+    if (!pool) {
+      console.error("❌ Central pool not found! Creating a new one.");
+      pool = new CentralPool({ balance: 0 }); // Create if not exists
+    }
 
+    pool.balance += amount;
+    await pool.save();
+    console.log(`✅ Central Pool Updated: ${amount} coins added. New Balance: ${pool.balance}`);
+  } catch (err) {
+    console.error("❌ Error updating Central Pool:", err);
+  }
+};
+
+// ✅ Premium Access API (Deducts 50 Coins & Grants 2 Hours Access)
 // ✅ Premium Access API (Deducts 50 Coins & Grants 2 Hours Access)
 app.post('/premium-access', authenticateUser, async (req, res) => {
   try {
@@ -512,13 +529,8 @@ app.post('/premium-access', authenticateUser, async (req, res) => {
     // ✅ Deduct 50 coins from user
     user.coins -= 50;
 
-    // ✅ Send deducted coins to Central Pool
-    let pool = await CentralPool.findOne();
-    if (!pool) {
-      return res.status(500).json({ message: "Central pool not found!" });
-    }
-    pool.balance += 50; // ✅ Add coins to pool
-    await pool.save();
+    // ✅ Update Central Pool
+    await updateCentralPool(50); // ✅ Now using the function
 
     // ✅ Update Premium Access Expiry (2 Hours)
     user.premiumExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
@@ -534,6 +546,7 @@ app.post('/premium-access', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 app.get('/check-premium-access', authenticateUser, async (req, res) => {
   try {
