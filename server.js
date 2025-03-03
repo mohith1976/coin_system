@@ -495,6 +495,56 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
   }
 });
 
+app.post('/premium-access', authenticateUser, async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.username });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.coins < 50) {
+      return res.status(400).json({ message: "Not enough coins to enter premium page!" });
+    }
+
+    // Deduct coins & Add to Central Pool
+    user.coins -= 50;
+    await updateCentralPool(50); // ✅ Add spent coins to the central pool
+    await logTransaction(user, 50, "Premium page access", "spend");
+
+    // ✅ Grant 2-hour access
+    const accessExpiresAt = Date.now() + 2 * 60 * 60 * 1000; // Current Time + 2 Hours
+    user.premiumAccessExpires = accessExpiresAt;
+    await user.save();
+
+    res.json({ message: "Premium access granted!", accessExpiresAt });
+
+  } catch (err) {
+    console.error("❌ Error in /premium-access:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.get('/check-premium-access', authenticateUser, async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.username });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const now = Date.now();
+    if (user.premiumAccessExpires && user.premiumAccessExpires > now) {
+      return res.json({ accessGranted: true, expiresAt: user.premiumAccessExpires });
+    }
+
+    res.json({ accessGranted: false, message: "Premium access expired! Spend 50 coins to re-enter." });
+
+  } catch (err) {
+    console.error("❌ Error in /check-premium-access:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 // ✅ View User Profile API (Protected)
 app.get('/profile', authenticateUser, async (req, res) => {
