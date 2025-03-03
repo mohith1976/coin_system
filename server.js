@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const cron = require("node-cron");
+const User = require("./models/User");
+const Transaction = require("./models/Transaction");
+const CentralPool = require("./models/CentralPool");
 
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -36,39 +39,7 @@ mongoose.connect(mongoURI, {
     process.exit(1);
   });
 
-// ✅ User Schema & Model
-const UserSchema = new mongoose.Schema({
-  userId: { type: String, unique: true, required: true },
-  username: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
-  email: { type: String, unique: true, required: true },
-  phone: { type: String, unique: true, required: true }, // ✅ Store without verification
-  coins: { type: Number, default: 50 },
-  lastLogin: { type: String, required: true },
-  bonusClicks: { type: Number, default: 0 },
-  otp: { type: String },  // ✅ Store OTP in the database
-  otpExpires: { type: Date }, // ✅ Expiry time for OTP (e.g., 10 mins)
-  referralCode: { type: String, unique: true, required: true },  // ✅ New Field
-  referredBy: { type: String, default: null }, // ✅ Stores the referral code of the referrer
-  dailyStreak: { type: Number, default: 0 }, 
-  lastCheckInDate: { type: String, default: "" },
-  currentToken: { type: String } // ✅ Store latest login token
 
-});
-
-const User = mongoose.model('User', UserSchema);
-
-
-// ✅ Define Transaction Schema
-const transactionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  amount: { type: Number, required: true },
-  type: { type: String, enum: ["earn", "spend"], required: true },
-  reason: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now }
-});
-
-const Transaction = mongoose.model("Transaction", transactionSchema);
 
 
 
@@ -226,21 +197,24 @@ app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     let user = await User.findOne({ username });
-
-    if (!user) {
-      return res.status(400).json({ message: "User not found. Please register." });
-    }
+    if (!user) return res.status(400).json({ message: "User not found. Please register." });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     let today = new Date().toISOString().split('T')[0];
+
     if (user.lastLogin !== today) {
+      let pool = await CentralPool.findOne();
+      if (!pool || pool.totalCoins < 50) {
+        return res.status(400).json({ message: "Daily login bonus unavailable (insufficient pool balance)" });
+      }
+
       user.coins += 50;
       user.lastLogin = today;
       user.bonusClicks = 0;
+      pool.totalCoins -= 50; // Deduct from pool
+      await pool.save();
       await user.save();
       await logTransaction(user, 50, "Daily login bonus", "earn"); 
     }
@@ -262,17 +236,21 @@ app.post('/login', async (req, res) => {
 app.post('/daily-login', authenticateUser, async (req, res) => {
   try {
     let user = await User.findOne({ username: req.username });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     let today = new Date().toISOString().split('T')[0];
 
     if (user.lastLogin !== today) {
-      user.coins += 50; // ✅ Give 50 coins for first login of the day
+      let pool = await CentralPool.findOne();
+      if (!pool || pool.totalCoins < 50) {
+        return res.status(400).json({ message: "Daily login bonus unavailable (insufficient pool balance)" });
+      }
+
+      user.coins += 50;
       user.lastLogin = today;
       user.bonusClicks = 0;
+      pool.totalCoins -= 50;
+      await pool.save();
       await user.save();
       await logTransaction(user, 50, "Daily login bonus", "earn");  
     }
@@ -284,6 +262,7 @@ app.post('/daily-login', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 // ✅ LOGOUT API
 app.post('/logout', authenticateUser, async (req, res) => {
   try {
@@ -302,14 +281,10 @@ app.post('/logout', authenticateUser, async (req, res) => {
 app.post('/daily-checkin', authenticateUser, async (req, res) => {
   try {
       let user = await User.findOne({ username: req.username });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
-      if (!user) {
-          return res.status(404).json({ message: "User not found" });
-      }
+      const today = new Date().toISOString().split('T')[0];
 
-      const today = new Date().toISOString().split('T')[0]; // Get YYYY-MM-DD format
-
-      // If user already checked in today, don't give extra coins
       if (user.lastCheckInDate === today) {
           return res.status(400).json({ message: "Already checked in today!" });
       }
@@ -321,7 +296,6 @@ app.post('/daily-checkin', authenticateUser, async (req, res) => {
       const lastCheckIn = new Date(user.lastCheckInDate);
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-
       if (user.lastCheckInDate && lastCheckIn.toISOString().split('T')[0] !== yesterday.toISOString().split('T')[0]) {
           newStreak = 1; // Reset streak if user missed a day
       }
@@ -330,10 +304,16 @@ app.post('/daily-checkin', authenticateUser, async (req, res) => {
       const dailyRewards = [0, 10, 20, 30, 40, 50, 60, 70]; // Index 1-7 (0 is unused)
       const coinsToAdd = dailyRewards[newStreak];
 
+      let pool = await CentralPool.findOne();
+      if (!pool || pool.totalCoins < coinsToAdd) {
+          return res.status(400).json({ message: "Check-in bonus unavailable (insufficient pool balance)" });
+      }
+
       user.coins += coinsToAdd;
       user.dailyStreak = newStreak;
       user.lastCheckInDate = today;
-
+      pool.totalCoins -= coinsToAdd;
+      await pool.save();
       await user.save();
       await logTransaction(user, coinsToAdd, `Daily check-in streak ${newStreak}`, "earn");
 
@@ -488,19 +468,24 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     const { coins } = req.body;
     let user = await User.findOne({ username: req.username });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.bonusClicks >= 5) {
       return res.status(400).json({ message: "No bonus attempts left today" });
     }
 
+    let pool = await CentralPool.findOne();
+    if (!pool || pool.totalCoins < coins) {
+        return res.status(400).json({ message: "Ad bonus unavailable (insufficient pool balance)" });
+    }
+
     user.coins += coins;
     user.bonusClicks += 1;
+    pool.totalCoins -= coins;
+    await pool.save();
     await user.save();
     
-    await logTransaction(user, 10, "Daily ad bonus", "earn");  
+    await logTransaction(user, coins, "Daily ad bonus", "earn");  
 
     res.json({ message: "Coins updated", user });
 
@@ -509,6 +494,7 @@ app.post('/add-coins', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ✅ View User Profile API (Protected)
 app.get('/profile', authenticateUser, async (req, res) => {
@@ -712,6 +698,29 @@ app.get('/fetch-user', authenticateUser, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// ✅ Auto-Refill Pool (Runs Every Hour)
+cron.schedule("0 * * * *", async () => {
+  const pool = await CentralPool.findOne();
+  const initialSupply = 50000000; // Initial pool balance
+
+  if (pool.totalCoins < initialSupply * 0.5) {
+    pool.totalCoins += initialSupply * 0.25; // Refill 25% of initial supply
+    pool.lastUpdated = new Date();
+    await pool.save();
+    console.log("🚀 Auto-refilled central pool by 25%.");
+  }
+});
+
+cron.schedule("0 * * * *", async () => {
+  const pool = await CentralPool.findOne();
+  const initialSupply = 50000000;
+
+  if (pool.totalCoins < initialSupply * 0.5) {
+    console.log("⚠️ ALERT: Pool is below 50%. Admin needs to take action!");
+  }
+});
+
 
 // ✅ Check Backend Status
 app.get("/", (req, res) => {
