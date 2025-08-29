@@ -12,7 +12,7 @@ The platform also lays the foundation for a **developer collaboration & communit
 The project is split into two repositories:
 
   - **User Backend (API for Users)** → Powers user authentication, rewards, transactions, redemption, communites join/create, performing activites to earn and the leaderboard.
-  - **Admin  (API for Admins)** → Controls the coin pool, redemptions, fraud detection, and economy balancing.
+  - **Admin  (API for Admins)** → Controls the coin pool, redemptions, fraud detection, and economy balancing. link: https://github.com/mohith1976/coin_system_dashboard.git
 
 -----
 
